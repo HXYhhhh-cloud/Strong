@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Strong — Fuel</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+  html, body { height: 100%; background: #1C1C1E; font-family: -apple-system, 'SF Pro Display', Helvetica, sans-serif; }
+  button { font-family: inherit; cursor: pointer; }
+  input { font-family: inherit; }
+  ::-webkit-scrollbar { display: none; }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes popIn { from { opacity:0; transform:scale(0.55); } to { opacity:1; transform:scale(1); } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const BLUE = "#3399FF";
+const GOAL = { kcal: 2800, p: 180, c: 320, f: 78 };
+const INITIAL_TODAY = { kcal: 1640, p: 112, c: 188, f: 44 };
+
+const FOOD_DB = [
+  { id:1, name:"Chicken Breast", sub:"Grilled · High Protein",   kcal:{S:130,M:220,L:340}, p:{S:28,M:46,L:72}, c:{S:0,M:0,L:0},   f:{S:3,M:5,L:7}  },
+  { id:2, name:"White Rice",     sub:"Steamed · Carb Source",    kcal:{S:130,M:260,L:390}, p:{S:3,M:5,L:8},   c:{S:28,M:56,L:84}, f:{S:0,M:1,L:1}  },
+  { id:3, name:"Whole Eggs",     sub:"Boiled · Complete Protein", kcal:{S:70,M:140,L:210},  p:{S:6,M:12,L:18}, c:{S:0,M:1,L:1},   f:{S:5,M:10,L:15}},
+  { id:4, name:"Rolled Oats",    sub:"Slow Carbs · Pre-Workout", kcal:{S:150,M:300,L:450}, p:{S:5,M:10,L:15}, c:{S:27,M:54,L:81}, f:{S:3,M:6,L:9}  },
+  { id:5, name:"Whey Isolate",   sub:"Shake · Post-Workout",     kcal:{S:110,M:220,L:330}, p:{S:25,M:50,L:75},c:{S:2,M:4,L:6},   f:{S:1,M:2,L:3}  },
+  { id:6, name:"Sweet Potato",   sub:"Baked · Clean Carbs",      kcal:{S:90,M:180,L:270},  p:{S:2,M:4,L:6},   c:{S:21,M:42,L:63}, f:{S:0,M:0,L:1}  },
+];
+
+const PORTION_INFO = {
+  S:{ label:"Small",  desc:"Snack / Cut Day",   emoji:"🥗" },
+  M:{ label:"Medium", desc:"Standard Meal",     emoji:"🍽️" },
+  L:{ label:"Large",  desc:"Bulk / Surplus",    emoji:"💪" },
+};
+
+/* ── icons (inline SVG) ─────────────────────────────────────── */
+const Icon = ({ d, size=22, stroke="#8E8E93", strokeWidth=1.8 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    {Array.isArray(d) ? d.map((p,i)=><path key={i} d={p}/>) : <path d={d}/>}
+  </svg>
+);
+
+const ICONS = {
+  user:       ["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2","M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"],
+  clock:      ["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z","M12 6v6l4 2"],
+  plus:       ["M12 5v14","M5 12h14"],
+  dumbbell:   ["M6.5 6.5h11","M6.5 17.5h11","M3 9.5h18","M3 14.5h18"],
+  ruler:      ["M3 21l18-18","M8.5 3.5 20.5 15.5","M3.5 8.5 15.5 20.5"],
+  search:     ["M21 21l-4.35-4.35","M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0"],
+  chevRight:  "M9 18l6-6-6-6",
+  chevLeft:   "M15 18l-6-6 6-6",
+  flame:      "M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z",
+  check:      ["M22 11.08V12a10 10 0 1 1-5.93-9.14","M22 4 12 14.01l-3-3"],
+};
+
+const Divider = () => <div style={{height:1,background:"#E5E5EA",margin:"0 20px"}}/>;
+
+/* ── HOME ───────────────────────────────────────────────────── */
+function HomeScreen({ onLogFuel }) {
+  const routines = [
+    {name:"Upper Body Push", sets:"8 sets · Chest, Shoulders"},
+    {name:"Pull Day A",      sets:"7 sets · Back, Biceps"},
+    {name:"Leg Day",         sets:"9 sets · Quads, Hamstrings"},
+  ];
+  const btn = (style, children, onClick) => (
+    <button onClick={onClick} style={{width:"100%",height:50,border:"none",borderRadius:12,
+      fontSize:17,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",
+      justifyContent:"center",gap:8,transition:"opacity .1s",...style}}
+      onMouseDown={e=>e.currentTarget.style.opacity="0.8"}
+      onMouseUp={e=>e.currentTarget.style.opacity="1"}
+    >{children}</button>
+  );
+  return (
+    <div style={{background:"#F2F2F7",minHeight:"100%",paddingBottom:90}}>
+      <div style={{background:"#fff",padding:"52px 20px 16px",borderBottom:"1px solid #E5E5EA"}}>
+        <div style={{fontSize:28,fontWeight:700,color:"#000",letterSpacing:"-0.5px"}}>Start Workout</div>
+      </div>
+      <div style={{background:"#fff",marginTop:20}}>
+        <div style={{padding:"16px 20px 6px",fontSize:20,fontWeight:700,color:"#000"}}>Quick Start</div>
+        <div style={{padding:"8px 20px 16px",display:"flex",flexDirection:"column",gap:10}}>
+          {btn({background:BLUE,color:"#fff"},<><Icon d={ICONS.plus} size={20} stroke="#fff" strokeWidth={2.5}/>Start an Empty Workout</>)}
+          {btn({background:"#fff",border:`1.5px solid ${BLUE}`,color:BLUE},
+               <><Icon d={ICONS.flame} size={18} stroke={BLUE} strokeWidth={2}/>Log Fuel</>, onLogFuel)}
+        </div>
+      </div>
+      <div style={{background:"#fff",marginTop:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px 10px"}}>
+          <span style={{fontSize:20,fontWeight:700,color:"#000"}}>My Routines</span>
+          <span style={{fontSize:15,color:BLUE,fontWeight:500}}>Edit</span>
+        </div>
+        {routines.map((r,i)=>(
+          <div key={i}>
+            <div style={{padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontSize:16,fontWeight:600,color:"#000"}}>{r.name}</div>
+                <div style={{fontSize:13,color:"#8E8E93",marginTop:2}}>{r.sets}</div>
+              </div>
+              <Icon d={ICONS.chevRight} size={18} stroke="#C7C7CC" strokeWidth={2}/>
+            </div>
+            {i<routines.length-1 && <Divider/>}
+          </div>
+        ))}
+        <div style={{padding:"10px 20px 16px"}}>
+          <button style={{width:"100%",height:44,background:"#F2F2F7",border:"none",
+            borderRadius:10,color:BLUE,fontSize:15,fontWeight:500}}>+ New Routine</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── FUEL DASHBOARD ─────────────────────────────────────────── */
+function EnergyBar({ current, goal }) {
+  const pct = Math.min((current/goal)*100, 100);
+  const [w, setW] = useState(0);
+  useEffect(()=>{ setTimeout(()=>setW(pct),100); },[pct]);
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+        <span style={{fontSize:13,color:"#8E8E93"}}>Today's Fuel</span>
+        <span style={{fontSize:13,color:"#8E8E93"}}>
+          <span style={{color:"#000",fontWeight:600}}>{current.toLocaleString()}</span> / {goal.toLocaleString()} kcal
+        </span>
+      </div>
+      <div style={{height:10,background:"#E5E5EA",borderRadius:5,overflow:"hidden"}}>
+        <div style={{height:"100%",borderRadius:5,width:`${w}%`,
+          background:pct>90?"#FF3B30":BLUE,
+          transition:"width 0.9s cubic-bezier(0.16,1,0.3,1)"}}/>
+      </div>
+    </div>
+  );
+}
+
+function FuelDashboard({ onSearch, todayData, loggedItems }) {
+  const macros = [
+    {key:"p",label:"Protein",color:BLUE},
+    {key:"c",label:"Carbs",  color:"#30D158"},
+    {key:"f",label:"Fat",    color:"#FF9500"},
+  ];
+  const seeded = [
+    {name:"Oat Meal",      size:"M",kcal:300,time:"07:30"},
+    {name:"Chicken Breast",size:"L",kcal:340,time:"12:00"},
+    {name:"Whey Isolate",  size:"S",kcal:110,time:"15:30"},
+  ];
+  return (
+    <div style={{background:"#F2F2F7",minHeight:"100%",paddingBottom:90}}>
+      <div style={{background:"#fff",padding:"52px 20px 16px",borderBottom:"1px solid #E5E5EA"}}>
+        <div style={{fontSize:28,fontWeight:700,color:"#000",letterSpacing:"-0.5px"}}>Fuel</div>
+      </div>
+      <div style={{background:"#fff",marginTop:20}}>
+        <div style={{padding:"16px 20px"}}><EnergyBar current={todayData.kcal} goal={GOAL.kcal}/></div>
+        <Divider/>
+        <div style={{display:"flex",padding:"16px 0"}}>
+          {macros.map((m,i)=>(
+            <div key={m.key} style={{flex:1,textAlign:"center",borderRight:i<2?"1px solid #E5E5EA":"none"}}>
+              <div style={{fontSize:22,fontWeight:700,color:"#000"}}>{todayData[m.key]}<span style={{fontSize:13,fontWeight:400,color:"#8E8E93"}}>g</span></div>
+              <div style={{fontSize:12,color:m.color,fontWeight:600,marginTop:2}}>{m.label}</div>
+              <div style={{fontSize:11,color:"#C7C7CC",marginTop:1}}>/{GOAL[m.key]}g</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{background:"#fff",marginTop:12}}>
+        <div style={{padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:13,color:"#8E8E93"}}>Remaining</div>
+            <div style={{fontSize:24,fontWeight:700,color:"#000"}}>
+              {Math.max(0,GOAL.kcal-todayData.kcal).toLocaleString()}<span style={{fontSize:14,fontWeight:400,color:"#8E8E93"}}> kcal</span>
+            </div>
+          </div>
+          <div style={{background:"#F2F2F7",borderRadius:10,padding:"8px 14px",textAlign:"center"}}>
+            <div style={{fontSize:11,color:"#8E8E93"}}>Next Session</div>
+            <div style={{fontSize:16,fontWeight:700,color:BLUE}}>~4h</div>
+          </div>
+        </div>
+      </div>
+      <div style={{padding:"14px 20px 0"}}>
+        <button onClick={onSearch} style={{width:"100%",height:50,background:BLUE,border:"none",
+          borderRadius:12,color:"#fff",fontSize:17,fontWeight:600,
+          display:"flex",alignItems:"center",justifyContent:"center",gap:8}}
+          onMouseDown={e=>e.currentTarget.style.opacity="0.85"}
+          onMouseUp={e=>e.currentTarget.style.opacity="1"}
+        >
+          <Icon d={ICONS.plus} size={20} stroke="#fff" strokeWidth={2.5}/>Add Food
+        </button>
+      </div>
+      {loggedItems.length>0 && (
+        <div style={{background:"#fff",marginTop:20}}>
+          <div style={{padding:"16px 20px 10px",fontSize:20,fontWeight:700,color:"#000"}}>Just Logged</div>
+          {loggedItems.map((item,i)=>(
+            <div key={i}>
+              <div style={{padding:"12px 20px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontSize:15,fontWeight:600,color:"#000"}}>{item.name}</div>
+                  <div style={{fontSize:13,color:"#8E8E93",marginTop:1}}>{PORTION_INFO[item.size].label} · {item.kcal} kcal</div>
+                </div>
+                <div style={{background:"#F2F2F7",borderRadius:6,padding:"3px 10px",fontSize:13,fontWeight:600,color:"#8E8E93"}}>{item.size}</div>
+              </div>
+              {i<loggedItems.length-1&&<Divider/>}
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{background:"#fff",marginTop:12}}>
+        <div style={{padding:"16px 20px 10px",fontSize:20,fontWeight:700,color:"#000"}}>Today's Log</div>
+        {seeded.map((item,i)=>(
+          <div key={i}>
+            <div style={{padding:"12px 20px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{display:"flex",gap:12,alignItems:"center"}}>
+                <span style={{fontSize:12,color:"#C7C7CC",width:38}}>{item.time}</span>
+                <div>
+                  <div style={{fontSize:15,fontWeight:600,color:"#000"}}>{item.name}</div>
+                  <div style={{fontSize:13,color:"#8E8E93"}}>{PORTION_INFO[item.size].label} · {item.kcal} kcal</div>
+                </div>
+              </div>
+              <div style={{background:"#F2F2F7",borderRadius:6,padding:"3px 10px",fontSize:13,fontWeight:600,color:"#8E8E93"}}>{item.size}</div>
+            </div>
+            {i<seeded.length-1&&<Divider/>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── SEARCH ─────────────────────────────────────────────────── */
+function SearchScreen({ onSelect, onBack }) {
+  const [query,setQuery]=useState("");
+  const inputRef=useRef(null);
+  useEffect(()=>{ setTimeout(()=>inputRef.current?.focus(),150); },[]);
+  const filtered=FOOD_DB.filter(f=>
+    f.name.toLowerCase().includes(query.toLowerCase())||
+    f.sub.toLowerCase().includes(query.toLowerCase())
+  );
+  return (
+    <div style={{background:"#F2F2F7",minHeight:"100%",paddingBottom:90}}>
+      <div style={{background:"#fff",padding:"52px 20px 12px",borderBottom:"1px solid #E5E5EA"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <button onClick={onBack} style={{background:"none",border:"none",color:BLUE,fontSize:17,padding:0}}>Cancel</button>
+          <div style={{flex:1,background:"#F2F2F7",borderRadius:10,padding:"8px 12px",display:"flex",alignItems:"center",gap:8}}>
+            <Icon d={ICONS.search} size={15} stroke="#8E8E93" strokeWidth={2}/>
+            <input ref={inputRef} value={query} onChange={e=>setQuery(e.target.value)}
+              placeholder="Search food..."
+              style={{flex:1,background:"none",border:"none",outline:"none",fontSize:15,color:"#000"}}/>
+          </div>
+        </div>
+      </div>
+      <div style={{background:"#fff",marginTop:20}}>
+        <div style={{padding:"10px 20px 6px",fontSize:12,color:"#8E8E93",fontWeight:500,letterSpacing:"0.04em"}}>
+          {query?"RESULTS":"FREQUENTLY USED"}
+        </div>
+        {filtered.map((food,i)=>(
+          <div key={food.id}>
+            <button onClick={()=>onSelect(food)} style={{
+              width:"100%",background:"none",border:"none",padding:"14px 20px",
+              display:"flex",justifyContent:"space-between",alignItems:"center",
+              cursor:"pointer",textAlign:"left",
+              animation:"fadeUp 0.18s ease both",animationDelay:`${i*0.03}s`}}>
+              <div>
+                <div style={{fontSize:16,fontWeight:600,color:"#000"}}>{food.name}</div>
+                <div style={{fontSize:13,color:"#8E8E93",marginTop:2}}>{food.sub}</div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{fontSize:13,color:"#8E8E93"}}>{food.kcal.M} kcal</span>
+                <Icon d={ICONS.chevRight} size={16} stroke="#C7C7CC" strokeWidth={2}/>
+              </div>
+            </button>
+            {i<filtered.length-1&&<Divider/>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── PORTION PICKER ─────────────────────────────────────────── */
+function PortionPicker({ food, onConfirm, onBack }) {
+  const [selected,setSelected]=useState("M");
+  return (
+    <div style={{background:"#F2F2F7",minHeight:"100%",paddingBottom:90}}>
+      <div style={{background:"#fff",padding:"52px 20px 16px",borderBottom:"1px solid #E5E5EA"}}>
+        <button onClick={onBack} style={{background:"none",border:"none",color:BLUE,fontSize:15,
+          padding:"0 0 8px",display:"flex",alignItems:"center",gap:2}}>
+          <Icon d={ICONS.chevLeft} size={18} stroke={BLUE} strokeWidth={2}/>Back
+        </button>
+        <div style={{fontSize:24,fontWeight:700,color:"#000",letterSpacing:"-0.4px"}}>{food.name}</div>
+        <div style={{fontSize:14,color:"#8E8E93",marginTop:4}}>{food.sub}</div>
+      </div>
+      <div style={{padding:"16px 20px 8px",fontSize:12,color:"#8E8E93",fontWeight:500,letterSpacing:"0.04em"}}>
+        CHOOSE YOUR PORTION
+      </div>
+      <div style={{padding:"0 20px",display:"flex",flexDirection:"column",gap:10}}>
+        {["S","M","L"].map(size=>{
+          const info=PORTION_INFO[size];
+          const isSel=selected===size;
+          return (
+            <button key={size} onClick={()=>setSelected(size)} style={{
+              background:"#fff",border:`2px solid ${isSel?BLUE:"transparent"}`,
+              borderRadius:14,padding:"16px 18px",
+              display:"flex",justifyContent:"space-between",alignItems:"center",
+              cursor:"pointer",width:"100%",textAlign:"left",
+              transition:"border-color .15s,transform .12s",
+              transform:isSel?"scale(1.01)":"scale(1)"}}>
+              <div style={{display:"flex",alignItems:"center",gap:14}}>
+                <div style={{width:44,height:44,borderRadius:10,fontSize:22,
+                  background:isSel?BLUE:"#F2F2F7",
+                  display:"flex",alignItems:"center",justifyContent:"center",
+                  transition:"background .15s"}}>{info.emoji}</div>
+                <div>
+                  <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+                    <span style={{fontSize:20,fontWeight:700,color:isSel?BLUE:"#000"}}>{size}</span>
+                    <span style={{fontSize:15,fontWeight:600,color:"#000"}}>{info.label}</span>
+                  </div>
+                  <div style={{fontSize:13,color:"#8E8E93",marginTop:2}}>{info.desc}</div>
+                </div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:20,fontWeight:700,color:isSel?BLUE:"#000"}}>{food.kcal[size]}</div>
+                <div style={{fontSize:12,color:"#8E8E93"}}>kcal</div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <div style={{background:"#fff",margin:"14px 0 0"}}>
+        <div style={{display:"flex",padding:"16px 0"}}>
+          {[["Protein","p",BLUE],["Carbs","c","#30D158"],["Fat","f","#FF9500"]].map(([label,key,color],i)=>(
+            <div key={key} style={{flex:1,textAlign:"center",borderRight:i<2?"1px solid #E5E5EA":"none"}}>
+              <div style={{fontSize:20,fontWeight:700,color:"#000"}}>{food[key][selected]}<span style={{fontSize:12,color:"#8E8E93",fontWeight:400}}>g</span></div>
+              <div style={{fontSize:12,color,fontWeight:600,marginTop:2}}>{label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{padding:"14px 20px 0"}}>
+        <button onClick={()=>onConfirm(food,selected)} style={{
+          width:"100%",height:50,background:BLUE,border:"none",
+          borderRadius:12,color:"#fff",fontSize:17,fontWeight:600}}
+          onMouseDown={e=>e.currentTarget.style.opacity="0.85"}
+          onMouseUp={e=>e.currentTarget.style.opacity="1"}
+        >Log {PORTION_INFO[selected].label} Portion</button>
+      </div>
+    </div>
+  );
+}
+
+/* ── SUCCESS ────────────────────────────────────────────────── */
+function SuccessScreen({ food, size, onDone }) {
+  const [shown,setShown]=useState(false);
+  useEffect(()=>{ setTimeout(()=>setShown(true),60); },[]);
+  const t = (delay,extra={}) => ({
+    opacity:shown?1:0, transition:`opacity 0.4s ease ${delay}s`, ...extra
+  });
+  return (
+    <div style={{background:"#fff",minHeight:"100%",
+      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+      padding:"40px 32px",textAlign:"center"}}>
+      <div style={{width:80,height:80,borderRadius:"50%",
+        background:shown?BLUE:"#E5E5EA",
+        display:"flex",alignItems:"center",justifyContent:"center",
+        transition:"background 0.4s ease, transform 0.45s cubic-bezier(0.16,1,0.3,1)",
+        transform:shown?"scale(1)":"scale(0.55)",marginBottom:24}}>
+        <Icon d={ICONS.check} size={38} stroke="#fff" strokeWidth={2}/>
+      </div>
+      <div style={{fontSize:26,fontWeight:700,color:"#000",letterSpacing:"-0.4px",marginBottom:8,...t(0.15,{transform:shown?"translateY(0)":"translateY(10px)",transition:"all 0.4s ease 0.15s"})}}>
+        Fuel Logged!
+      </div>
+      <div style={{fontSize:16,color:"#8E8E93",marginBottom:6,...t(0.25)}}>
+        {food.name} · {PORTION_INFO[size].label}
+      </div>
+      <div style={{fontSize:24,fontWeight:700,color:BLUE,marginBottom:32,...t(0.3)}}>
+        +{food.kcal[size]} kcal
+      </div>
+      <div style={{background:"#F2F2F7",borderRadius:14,padding:"16px 24px",
+        marginBottom:36,width:"100%",...t(0.4)}}>
+        <div style={{fontSize:14,color:"#8E8E93",marginBottom:6}}>Tonight's session</div>
+        <div style={{fontSize:16,fontWeight:600,color:"#000"}}>You're fueled. Ready to lift. 💪</div>
+      </div>
+      <button onClick={onDone} style={{width:"100%",height:50,background:BLUE,border:"none",
+        borderRadius:12,color:"#fff",fontSize:17,fontWeight:600,...t(0.5)}}>
+        Back to Home
+      </button>
+    </div>
+  );
+}
+
+/* ── TAB BAR ────────────────────────────────────────────────── */
+const TABS = [
+  {id:"profile",  icon:ICONS.user,      label:"Profile"},
+  {id:"history",  icon:ICONS.clock,     label:"History"},
+  {id:"home",     icon:ICONS.plus,      label:""},
+  {id:"exercises",icon:ICONS.dumbbell,  label:"Exercises"},
+  {id:"measure",  icon:ICONS.ruler,     label:"Measure"},
+];
+
+function TabBar({ activeTab, onTabChange }) {
+  return (
+    <div style={{position:"absolute",bottom:0,left:0,right:0,height:83,
+      background:"#fff",borderTop:"1px solid #E5E5EA",
+      display:"flex",alignItems:"stretch",paddingBottom:16,zIndex:100}}>
+      {TABS.map(tab=>{
+        const isCenter=tab.id==="home";
+        const isActive=activeTab===tab.id;
+        if(isCenter) return (
+          <div key={tab.id} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <button onClick={()=>onTabChange("home")} style={{
+              width:44,height:44,borderRadius:"50%",background:BLUE,border:"none",
+              display:"flex",alignItems:"center",justifyContent:"center",
+              boxShadow:`0 2px 10px ${BLUE}55`,transition:"transform .12s"}}
+              onMouseDown={e=>e.currentTarget.style.transform="scale(0.92)"}
+              onMouseUp={e=>e.currentTarget.style.transform="scale(1)"}
+            >
+              <Icon d={ICONS.plus} size={22} stroke="#fff" strokeWidth={2.5}/>
+            </button>
+          </div>
+        );
+        const col=isActive?BLUE:"#8E8E93";
+        return (
+          <button key={tab.id} onClick={()=>onTabChange(tab.id)} style={{
+            flex:1,background:"none",border:"none",cursor:"pointer",
+            display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+            gap:4,padding:"8px 0 0"}}>
+            <Icon d={tab.icon} size={22} stroke={col} strokeWidth={isActive?2.2:1.8}/>
+            <span style={{fontSize:10,color:col,fontWeight:isActive?600:400}}>{tab.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function PlaceholderScreen({ d, title }) {
+  return (
+    <div style={{background:"#F2F2F7",minHeight:"100%",display:"flex",flexDirection:"column",
+      alignItems:"center",justifyContent:"center",gap:12}}>
+      <Icon d={d} size={40} stroke="#C7C7CC" strokeWidth={1.5}/>
+      <div style={{fontSize:17,color:"#8E8E93",fontWeight:500}}>{title}</div>
+    </div>
+  );
+}
+
+/* ── ROOT ───────────────────────────────────────────────────── */
+function App() {
+  const [activeTab,setActiveTab]=useState("home");
+  const [fuelScreen,setFuelScreen]=useState("dashboard");
+  const [selectedFood,setSelectedFood]=useState(null);
+  const [selectedSize,setSelectedSize]=useState("M");
+  const [todayData,setTodayData]=useState({...INITIAL_TODAY});
+  const [loggedItems,setLoggedItems]=useState([]);
+
+  const handleTabChange=(tab)=>{ setActiveTab(tab); if(tab==="home") setFuelScreen("dashboard"); };
+
+  const handleConfirm=(food,size)=>{
+    setSelectedSize(size);
+    setTodayData(prev=>({
+      kcal:prev.kcal+food.kcal[size], p:prev.p+food.p[size],
+      c:prev.c+food.c[size],         f:prev.f+food.f[size],
+    }));
+    setLoggedItems(prev=>[{name:food.name,size,kcal:food.kcal[size]},...prev]);
+    setFuelScreen("success");
+  };
+
+  const displayTab = activeTab==="fuel"?"home":activeTab;
+
+  const renderContent=()=>{
+    if(activeTab==="profile")   return <PlaceholderScreen d={ICONS.user}     title="Profile"/>;
+    if(activeTab==="history")   return <PlaceholderScreen d={ICONS.clock}    title="History"/>;
+    if(activeTab==="exercises") return <PlaceholderScreen d={ICONS.dumbbell} title="Exercises"/>;
+    if(activeTab==="measure")   return <PlaceholderScreen d={ICONS.ruler}    title="Measure"/>;
+    if(activeTab==="home")      return <HomeScreen onLogFuel={()=>{ setActiveTab("fuel"); setFuelScreen("dashboard"); }}/>;
+    if(activeTab==="fuel"){
+      if(fuelScreen==="dashboard") return <FuelDashboard onSearch={()=>setFuelScreen("search")} todayData={todayData} loggedItems={loggedItems}/>;
+      if(fuelScreen==="search")    return <SearchScreen onSelect={f=>{ setSelectedFood(f); setFuelScreen("portion"); }} onBack={()=>setFuelScreen("dashboard")}/>;
+      if(fuelScreen==="portion")   return <PortionPicker food={selectedFood} onConfirm={handleConfirm} onBack={()=>setFuelScreen("search")}/>;
+      if(fuelScreen==="success")   return <SuccessScreen food={selectedFood} size={selectedSize} onDone={()=>{ setActiveTab("home"); setFuelScreen("dashboard"); }}/>;
+    }
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:"#1C1C1E",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px 0"}}>
+      <div style={{width:375,height:812,background:"#F2F2F7",borderRadius:52,overflow:"hidden",
+        position:"relative",
+        boxShadow:"0 0 0 10px #2C2C2E,0 0 0 12px #3A3A3C,0 40px 100px rgba(0,0,0,0.6)",
+        border:"1px solid #3A3A3C"}}>
+        {/* Notch */}
+        <div style={{position:"absolute",top:0,left:"50%",transform:"translateX(-50%)",
+          width:126,height:34,background:"#000",
+          borderBottomLeftRadius:20,borderBottomRightRadius:20,zIndex:200}}/>
+        {/* Status bar */}
+        <div style={{position:"absolute",top:0,left:0,right:0,height:44,
+          display:"flex",justifyContent:"space-between",alignItems:"flex-end",
+          padding:"0 28px 6px",zIndex:150,pointerEvents:"none"}}>
+          <span style={{fontSize:12,fontWeight:600,color:"#000"}}>9:41</span>
+          <span style={{fontSize:10,color:"#000"}}>●●●</span>
+        </div>
+        {/* Screen */}
+        <div style={{position:"absolute",inset:0,overflowY:"auto",overflowX:"hidden"}}>
+          {renderContent()}
+        </div>
+        <TabBar activeTab={displayTab} onTabChange={handleTabChange}/>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
